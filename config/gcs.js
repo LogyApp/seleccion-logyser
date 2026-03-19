@@ -1,0 +1,26 @@
+const path = require('path');
+const { Storage } = require('@google-cloud/storage');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+
+const storageOptions = {};
+if (process.env.GCS_PROJECT_ID) storageOptions.projectId = process.env.GCS_PROJECT_ID;
+
+if (process.env.GCS_KEYFILE) {
+  storageOptions.keyFilename = path.resolve(__dirname, '../', process.env.GCS_KEYFILE);
+}
+
+const storage = new Storage(storageOptions);
+
+function getBucketAspirantes() {
+  return storage.bucket(process.env.BUCKET_ASPIRANTES);
+}
+
+function getBucketEmpleados() {
+  return storage.bucket(process.env.BUCKET_EMPLEADOS);
+}
+
+module.exports = {
+  storage,
+  getBucketAspirantes,
+  getBucketEmpleados,
+};
