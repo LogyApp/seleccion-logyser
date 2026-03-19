@@ -3,7 +3,6 @@ const path = require('path');
 const { Storage } = require('@google-cloud/storage');
 
 const { getBucketAspirantes } = require('../config/gcs');
-const bucket = getBucketAspirantes();
 
 // ESTA ES LA FUNCIÓN QUE PROCESA UNO POR UNO
 async function guardarArchivo(id_aspirante, id_config_doc, file) {
@@ -25,6 +24,7 @@ async function guardarArchivo(id_aspirante, id_config_doc, file) {
     const gcsPath = `${identificacion}/${nombreArchivo}`; 
 
     // 2. Subir a Google Cloud Storage
+    const bucket = getBucketAspirantes();
     const blob = bucket.file(gcsPath);
     const blobStream = blob.createWriteStream({ resumable: false });
 
