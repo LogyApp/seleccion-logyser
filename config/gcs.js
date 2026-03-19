@@ -1,6 +1,8 @@
 const path = require('path');
 const { Storage } = require('@google-cloud/storage');
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+}
 
 const storageOptions = {};
 if (process.env.GCS_PROJECT_ID) storageOptions.projectId = process.env.GCS_PROJECT_ID;
