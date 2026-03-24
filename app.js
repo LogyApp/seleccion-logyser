@@ -792,40 +792,48 @@ function generarHtmlPortal(uuid, nombre, docs, mapaDocs, pdfUrl) {
                 const inputs = form.querySelectorAll('input[type="file"]');
                 const alguno = Array.from(inputs).some(i => i.files && i.files.length > 0);
                 if (!alguno) {
-                alert('Selecciona al menos un archivo');
-                return;
-                }
-
-                // UI loading
-                if (btn) {
-                btn.innerText = 'Enviando archivos... Por favor espera';
-                btn.disabled = true;
-                btn.classList.add('opacity-50');
-                }
-
-                try {
-                const resp = await fetch('/upload-multiple', {
-                    method: 'POST',
-                    body: new FormData(form) // IMPORTANTE: no pongas Content-Type manual
-                });
-
-                const data = await resp.json().catch(() => null);
-
-                if (!resp.ok || !data || !data.ok) {
-                    alert((data && (data.message + (data.details ? '\n' + data.details : ''))) || 'Error al cargar archivos');
+                    alert('Selecciona al menos un archivo');
                     return;
                 }
 
-                alert(data.message || 'OK');
-                window.location.href = data.redirect || '/portal/${uuid}';
-                } catch (err) {
-                alert('Error de red al cargar archivos');
-                } finally {
+                // UI loading
+                const originalText = btn ? btn.innerText : '';
                 if (btn) {
-                    btn.disabled = false;
-                    btn.classList.remove('opacity-50');
-                    btn.innerText = 'Cargar Documentos Seleccionados';
+                    btn.innerText = 'Enviando archivos...';
+                    btn.disabled = true;
+                    btn.classList.add('opacity-50', 'cursor-not-allowed');
                 }
+
+                try {
+                    const formData = new FormData(form);
+
+                    const resp = await fetch(form.action, {
+                    method: 'POST',
+                    body: formData,
+                    });
+
+                    const json = await resp.json().catch(() => null);
+
+                    if (!resp.ok || !json || !json.ok) {
+                    const msg = (json && (json.message || json.details)) ? `${json.message}\n${json.details || ''}` : 'Error subiendo documentos';
+                    alert(msg);
+                    return;
+                    }
+
+                    // éxito
+                    if (json.redirect) {
+                    window.location.href = json.redirect;
+                    } else {
+                    window.location.reload();
+                    }
+                } catch (err) {
+                    alert(`Error de red: ${err?.message || err}`);
+                } finally {
+                    if (btn) {
+                    btn.innerText = originalText;
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    }
                 }
             });
 
