@@ -9,6 +9,15 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+function jsonOk(res, { message = 'OK', redirect = null, data = null } = {}) {
+  return res.status(200).json({ ok: true, message, redirect, data });
+}
+
+function jsonError(res, error, { status = 500, message = 'Error interno' } = {}) {
+  const details = error?.message ? String(error.message) : String(error);
+  return res.status(status).json({ ok: false, message, details });
+}
+
 // --- 1. RUTA DEL ASPIRANTE (/portal/:uuid) ---
 app.get('/portal/:uuid', async (req, res) => {
     const { uuid } = req.params;
@@ -156,79 +165,107 @@ app.get('/admin/:uuid', async (req, res) => {
 });
 
 app.post('/aprobar-doc', async (req, res) => {
-    const { id_aspirante, id_config_doc } = req.body;
-    try {
-        await db.query('UPDATE Dynamic_hv_documentos SET estado = "Aprobado" WHERE id_aspirante = ? AND id_config_doc = ?', [id_aspirante, id_config_doc]);
-        res.send(`<script>alert('Documento Aprobado'); window.location.href='/admin/${id_aspirante}';</script>`);
-    } catch (error) {
-        res.status(500).send("Error al aprobar");
-    }
+  const { id_aspirante, id_config_doc } = req.body;
+  try {
+    await db.query(
+      'UPDATE Dynamic_hv_documentos SET estado = "Aprobado" WHERE id_aspirante = ? AND id_config_doc = ?',
+      [id_aspirante, id_config_doc]
+    );
+    return jsonOk(res, { message: 'Documento aprobado', redirect: `/admin/${id_aspirante}` });
+  } catch (error) {
+    return jsonError(res, error, { message: 'Error al aprobar documento' });
+  }
 });
 
 app.post('/aprobar-masivo', async (req, res) => {
-    const { id_aspirante, ids_docs } = req.body;
-    const ids = JSON.parse(ids_docs);
-    try {
-        // Actualizamos todos los IDs seleccionados en una sola transacción
-        await db.query('UPDATE Dynamic_hv_documentos SET estado = "Aprobado" WHERE id_aspirante = ? AND id_config_doc IN (?)', [id_aspirante, ids]);
-        res.send(`<script>alert('Los documentos fueron aprobados'); window.location.href='/admin/${id_aspirante}';</script>`);
-    } catch (error) {
-        res.status(500).send("Error en aprobación masiva");
-    }
+  const { id_aspirante, ids_docs } = req.body;
+
+  try {
+    const ids = Array.isArray(ids_docs) ? ids_docs : JSON.parse(ids_docs);
+
+    await db.query(
+      'UPDATE Dynamic_hv_documentos SET estado = "Aprobado" WHERE id_aspirante = ? AND id_config_doc IN (?)',
+      [id_aspirante, ids]
+    );
+
+    return jsonOk(res, { message: 'Aprobación masiva completada', redirect: `/admin/${id_aspirante}` });
+  } catch (error) {
+    return jsonError(res, error, { message: 'Error en aprobación masiva' });
+  }
 });
 
 // --- 2. RUTA PARA ELIMINAR DOCUMENTOS ---
 app.post('/delete-doc', async (req, res) => {
-    const { id_aspirante, id_config_doc } = req.body;
-    try {
-        const [rows] = await db.query('SELECT gcs_path FROM Dynamic_hv_documentos WHERE id_aspirante = ? AND id_config_doc = ?', [id_aspirante, id_config_doc]);
-        if (rows.length > 0) {
-            const filePath = rows[0].gcs_path;
-            const bucket = getBucketAspirantes();
-            await bucket.file(filePath).delete().catch(() => {});
-            await db.query('DELETE FROM Dynamic_hv_documentos WHERE id_aspirante = ? AND id_config_doc = ?', [id_aspirante, id_config_doc]);
-            res.send(`<script>alert('El documento ha sido eliminado'); window.location.href='/portal/${id_aspirante}';</script>`);
-        } else {
-            res.status(404).send("No encontrado");
-        }
-    } catch (error) {
-        res.status(500).send("Error al eliminar");
+  const { id_aspirante, id_config_doc } = req.body;
+
+  try {
+    const [rows] = await db.query(
+      'SELECT gcs_path FROM Dynamic_hv_documentos WHERE id_aspirante = ? AND id_config_doc = ?',
+      [id_aspirante, id_config_doc]
+    );
+
+    if (rows.length === 0) {
+      return jsonError(res, new Error('No encontrado'), { status: 404, message: 'Documento no encontrado' });
     }
+
+    const filePath = rows[0].gcs_path;
+    await getBucketAspirantes().file(filePath).delete().catch(() => {});
+    await db.query(
+      'DELETE FROM Dynamic_hv_documentos WHERE id_aspirante = ? AND id_config_doc = ?',
+      [id_aspirante, id_config_doc]
+    );
+
+    return jsonOk(res, { message: 'Documento eliminado', redirect: `/portal/${id_aspirante}` });
+  } catch (error) {
+    return jsonError(res, error, { message: 'Error al eliminar documento' });
+  }
 });
 
 app.post('/delete-doc-admin', async (req, res) => {
-    const { id_aspirante, id_config_doc } = req.body;
-    try {
-        const [rows] = await db.query('SELECT gcs_path FROM Dynamic_hv_documentos WHERE id_aspirante = ? AND id_config_doc = ?', [id_aspirante, id_config_doc]);
-        if (rows.length > 0) {
-            // Elimina del bucket hojas_vida_logyser
-            await getBucketAspirantes().file(rows[0].gcs_path).delete().catch(() => {});
-            // Elimina el registro de la DB
-            await db.query('DELETE FROM Dynamic_hv_documentos WHERE id_aspirante = ? AND id_config_doc = ?', [id_aspirante, id_config_doc]);
-            res.send(`<script>alert('El documento ha sido eliminado'); window.location.href='/admin/${id_aspirante}';</script>`);
-        }
-    } catch (error) { 
-        res.status(500).send("Error al eliminar documento"); 
+  const { id_aspirante, id_config_doc } = req.body;
+
+  try {
+    const [rows] = await db.query(
+      'SELECT gcs_path FROM Dynamic_hv_documentos WHERE id_aspirante = ? AND id_config_doc = ?',
+      [id_aspirante, id_config_doc]
+    );
+
+    if (rows.length === 0) {
+      return jsonError(res, new Error('No encontrado'), { status: 404, message: 'Documento no encontrado' });
     }
+
+    const filePath = rows[0].gcs_path;
+    await getBucketAspirantes().file(filePath).delete().catch(() => {});
+    await db.query(
+      'DELETE FROM Dynamic_hv_documentos WHERE id_aspirante = ? AND id_config_doc = ?',
+      [id_aspirante, id_config_doc]
+    );
+
+    return jsonOk(res, { message: 'Documento eliminado', redirect: `/admin/${id_aspirante}` });
+  } catch (error) {
+    return jsonError(res, error, { message: 'Error al eliminar documento (admin)' });
+  }
 });
 // --- 3. RUTA DE CARGA MÚLTIPLE ---
 app.post('/upload-multiple', upload.any(), async (req, res) => {
-    const { id_aspirante, origen } = req.body; // Recibimos el origen
-    const archivos = req.files;
-    if (!archivos || archivos.length === 0) return res.send("<script>alert('No seleccionaste archivos'); window.history.back();</script>");
+  const { id_aspirante, origen } = req.body;
+  const archivos = req.files;
 
-    try {
-        for (const file of archivos) {
-            const id_config_doc = Number(file.fieldname.replace('file_', ''));
-            await documentoController.guardarArchivo(id_aspirante, id_config_doc, file);
-        }
-        
-        // Redirección inteligente según el origen
-        const redirectPath = origen === 'admin' ? `/admin/${id_aspirante}` : `/portal/${id_aspirante}`;
-        res.send(`<script>alert('Documentos cargados con éxito'); window.location.href='${redirectPath}';</script>`);
-    } catch (error) {
-        res.status(500).send("Error: " + error.message);
+  if (!archivos || archivos.length === 0) {
+    return jsonError(res, new Error('Sin archivos'), { status: 400, message: 'No seleccionaste archivos' });
+  }
+
+  try {
+    for (const file of archivos) {
+      const id_config_doc = Number(String(file.fieldname).replace('file_', ''));
+      await documentoController.guardarArchivo(id_aspirante, id_config_doc, file);
     }
+
+    const redirectPath = origen === 'admin' ? `/admin/${id_aspirante}` : `/portal/${id_aspirante}`;
+    return jsonOk(res, { message: 'Documentos cargados con éxito', redirect: redirectPath });
+  } catch (error) {
+    return jsonError(res, error, { message: 'Error al cargar archivos' });
+  }
 });
 
 // Obtener regionales únicas (excluyendo INACTIVO)
@@ -654,12 +691,15 @@ app.post('/finalizar-contratacion', async (req, res) => {
         await connection.query('UPDATE Dynamic_hv_aspirante SET estado_proceso = "contratado" WHERE id_aspirante = ?', [id_aspirante]);
 
         await connection.commit();
-        res.send(`<script>alert('${mensajeFinal}'); window.location.href='/admin/${id_aspirante}';</script>`);
+        return jsonOk(res, {
+        message: mensajeFinal,
+        redirect: `/admin/${id_aspirante}`,
+        });
 
     } catch (error) {
         if (connection) await connection.rollback();
         console.error("Error en contratación:", error);
-        res.status(500).send(`<script>alert('Error: ${error.message}'); window.history.back();</script>`);
+        return jsonError(res, error, { message: 'Error en contratación' });
     } finally {
         if (connection) connection.release();
     }
@@ -697,6 +737,8 @@ function generarHtmlPortal(uuid, nombre, docs, mapaDocs, pdfUrl) {
             <div class="bg-white shadow-2xl rounded-3xl overflow-hidden border border-slate-100">
                 <form action="/upload-multiple" method="POST" enctype="multipart/form-data" id="mainForm">
                     <input type="hidden" name="id_aspirante" value="${uuid}">
+                    <input type="hidden" name="origen" value="admin">
+                    <input type="hidden" name="origen" value="portal">
                     <div class="p-8 md:p-12">
                         <h2 class="text-3xl font-bold text-slate-800 mb-2 italic">¡Hola, ${nombre}!</h2>
                         <p class="text-slate-500 mb-10 text-sm font-medium">Bienvenido al proceso de selección, a continuación, gestiona los documentos requeridos. Los documentos aprobados por Selección no podrán ser modificados.</p>
@@ -738,27 +780,70 @@ function generarHtmlPortal(uuid, nombre, docs, mapaDocs, pdfUrl) {
         </div>
 
         <script>
-            document.getElementById('mainForm').onsubmit = function() {
+            document.getElementById('mainForm')?.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const form = e.target;
                 const btn = document.getElementById('btnSubmit');
-                const inputs = document.querySelectorAll('input[type="file"]');
-                let alguno = false;
-                inputs.forEach(i => { if(i.files.length > 0) alguno = true; });
 
-                if(!alguno) { alert('Selecciona al menos un archivo'); return false; }
+                // Validación: al menos 1 archivo
+                const inputs = form.querySelectorAll('input[type="file"]');
+                const alguno = Array.from(inputs).some(i => i.files && i.files.length > 0);
+                if (!alguno) {
+                alert('Selecciona al menos un archivo');
+                return;
+                }
 
-                btn.innerHTML = '<span class="flex items-center justify-center italic">Enviando archivos... Por favor espera</span>';
+                // UI loading
+                if (btn) {
+                btn.innerText = 'Enviando archivos... Por favor espera';
                 btn.disabled = true;
                 btn.classList.add('opacity-50');
-                return true;
-            };
-
-            function confirmarEliminar(id, nombre) {
-                if(confirm('¿Eliminar ' + nombre + '?')) {
-                    const f = document.createElement('form'); f.method = 'POST'; f.action = '/delete-doc';
-                    const i1 = document.createElement('input'); i1.type='hidden'; i1.name='id_aspirante'; i1.value='${uuid}';
-                    const i2 = document.createElement('input'); i2.type='hidden'; i2.name='id_config_doc'; i2.value=id;
-                    f.appendChild(i1); f.appendChild(i2); document.body.appendChild(f); f.submit();
                 }
+
+                try {
+                const resp = await fetch('/upload-multiple', {
+                    method: 'POST',
+                    body: new FormData(form) // IMPORTANTE: no pongas Content-Type manual
+                });
+
+                const data = await resp.json().catch(() => null);
+
+                if (!resp.ok || !data || !data.ok) {
+                    alert((data && (data.message + (data.details ? '\n' + data.details : ''))) || 'Error al cargar archivos');
+                    return;
+                }
+
+                alert(data.message || 'OK');
+                window.location.href = data.redirect || '/portal/${uuid}';
+                } catch (err) {
+                alert('Error de red al cargar archivos');
+                } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50');
+                    btn.innerText = 'Cargar Documentos Seleccionados';
+                }
+                }
+            });
+
+            async function confirmarEliminar(id, nombre) {
+                if (!confirm('¿Eliminar ' + nombre + '?')) return;
+
+                const resp = await fetch('/delete-doc', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id_aspirante: '${uuid}', id_config_doc: id })
+                });
+
+                const data = await resp.json().catch(() => null);
+                if (!resp.ok || !data || !data.ok) {
+                    alert((data && (data.message + (data.details ? '\n' + data.details : ''))) || 'Error');
+                    return;
+                }
+
+                alert(data.message || 'OK');
+                window.location.href = data.redirect || '/portal/${uuid}';
             }
         </script>
     </body></html>`;
@@ -866,11 +951,12 @@ function generarHtmlAdmin(uuid, asp, idsAsp, nombresAsp, docsTec, docsFir, mapa,
                     </div>
                 </div>
 
-                <form action="/upload-multiple" method="POST" enctype="multipart/form-data" 
+                <form id="uploadFormTec" action="/upload-multiple" method="POST" enctype="multipart/form-data"
                     class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden"
-                    onsubmit="this.querySelector('button[type=submit]').innerText='Cargando...'; this.querySelector('button[type=submit]').classList.add('opacity-50', 'pointer-events-none');">
+                    data-upload-form="1">
                     <input type="hidden" name="id_aspirante" value="${uuid}">
                     <input type="hidden" name="origen" value="admin">
+                    <input type="hidden" name="redirect_mode" value="json">
                     <div class="p-4 bg-orange-500 text-white font-bold text-xs tracking-widest uppercase text-center">2. Documentos Técnicos</div>
                     <div class="p-2">${docsTec.map(renderFilaSeleccion).join('')}</div>
                     <div class="p-4">
@@ -880,11 +966,12 @@ function generarHtmlAdmin(uuid, asp, idsAsp, nombresAsp, docsTec, docsFir, mapa,
                     </div>
                 </form>
 
-                <form action="/upload-multiple" method="POST" enctype="multipart/form-data" 
+                <form id="uploadFormFir" action="/upload-multiple" method="POST" enctype="multipart/form-data"
                     class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden"
-                    onsubmit="this.querySelector('button[type=submit]').innerText='Cargando...'; this.querySelector('button[type=submit]').classList.add('opacity-50', 'pointer-events-none');">
+                    data-upload-form="1">
                     <input type="hidden" name="id_aspirante" value="${uuid}">
                     <input type="hidden" name="origen" value="admin">
+                    <input type="hidden" name="redirect_mode" value="json">
                     <div class="p-4 bg-purple-600 text-white font-bold text-xs tracking-widest uppercase text-center">3. Documentos para Firmas</div>
                     <div class="p-2 h-[450px] overflow-y-auto">${docsFir.map(renderFilaSeleccion).join('')}</div>
                     <div class="p-4">
@@ -896,7 +983,10 @@ function generarHtmlAdmin(uuid, asp, idsAsp, nombresAsp, docsTec, docsFir, mapa,
             </div>
 
             <div class="mt-12 text-center pb-20">
-                <button onclick="prepararEnvio('${asp.IdRequisicion}')" class="bg-slate-800 text-white px-16 py-6 rounded-3xl font-black text-xl shadow-2xl hover:scale-105 transition-all">ENVIAR A SOCIODEMOGRÁFICA</button>
+                <button id="btnEnviarSocio" type="button" data-idreq='${JSON.stringify(asp.IdRequisicion ?? null)}'
+                    class="bg-slate-800 text-white px-16 py-6 rounded-3xl font-black text-xl shadow-2xl hover:scale-105 transition-all">
+                    ENVIAR A SOCIODEMOGRÁFICA
+                </button>
             </div>
         </div>
 
@@ -906,6 +996,7 @@ function generarHtmlAdmin(uuid, asp, idsAsp, nombresAsp, docsTec, docsFir, mapa,
                <form id="formFinal" action="/finalizar-contratacion" method="POST" 
                     onsubmit="const btn=this.querySelector('button[type=submit]'); btn.innerText='PROCESANDO...'; btn.classList.add('opacity-50', 'pointer-events-none');">
                     <input type="hidden" name="id_aspirante" value="${uuid}">
+                    <input type="hidden" name="origen" value="admin">
                     
                     <div class="mb-4">
                         <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Regional</label>
@@ -935,33 +1026,59 @@ function generarHtmlAdmin(uuid, asp, idsAsp, nombresAsp, docsTec, docsFir, mapa,
                 </form>
             </div>
         </div>
+        
+        <script> 
+            const regionalSugerida = ${JSON.stringify(asp.regionalSugerida || '')};
+            const operacionSugerida = ${JSON.stringify(asp.operacionSugerida || '')};                        
+            async function eliminar(id, nombre) {
+                if (!confirm('¿Eliminar permanentemente ' + nombre + '?')) return;
 
-        <script>
-            function eliminar(id, nombre) {
-                if(confirm('¿Eliminar permanentemente ' + nombre + '?')) {
-                    const f = document.createElement('form'); f.method='POST'; f.action='/delete-doc-admin';
-                    const i1 = document.createElement('input'); i1.type='hidden'; i1.name='id_aspirante'; i1.value='${uuid}';
-                    const i2 = document.createElement('input'); i2.type='hidden'; i2.name='id_config_doc'; i2.value=id;
-                    f.appendChild(i1); f.appendChild(i2); document.body.appendChild(f); f.submit();
+                const resp = await fetch('/delete-doc-admin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id_aspirante: '${uuid}', id_config_doc: id })
+                });
+
+                const data = await resp.json().catch(() => null);
+                if (!resp.ok || !data || !data.ok) {
+                    alert((data && (data.message + (data.details ? '\n' + data.details : ''))) || 'Error');
+                    return;
                 }
+
+                alert(data.message || 'OK');
+                window.location.href = data.redirect || '/admin/${uuid}';
             }
-            function aprobarMasivo() {
+            async function aprobarMasivo() {
                 const sel = Array.from(document.querySelectorAll('.doc-check:checked')).map(cb => cb.value);
                 if (sel.length === 0) return alert('Selecciona documentos');
-                const f = document.createElement('form'); f.method='POST'; f.action='/aprobar-masivo';
-                const i1 = document.createElement('input'); i1.type='hidden'; i1.name='id_aspirante'; i1.value='${uuid}';
-                const i2 = document.createElement('input'); i2.type='hidden'; i2.name='ids_docs'; i2.value=JSON.stringify(sel);
-                f.appendChild(i1); f.appendChild(i2); document.body.appendChild(f); f.submit();
+
+                const resp = await fetch('/aprobar-masivo', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                    id_aspirante: '${uuid}',
+                    ids_docs: sel
+                    })
+                });
+
+                const data = await resp.json().catch(() => null);
+                if (!resp.ok || !data || !data.ok) {
+                    alert((data && (data.message + (data.details ? '\n' + data.details : ''))) || 'Error');
+                    return;
+                }
+
+                alert(data.message || 'OK');
+                window.location.href = data.redirect || '/admin/${uuid}';
             }
-            function prepararEnvio(idRequisicion) {
-                if (!idRequisicion || idRequisicion === 'null' || idRequisicion === '') {
+            document.getElementById('btnEnviarSocio')?.addEventListener('click', async () => {
+                const idReq = JSON.parse(document.getElementById('btnEnviarSocio').dataset.idreq || 'null');
+                if (!idReq) {
                     alert('Es necesario que la hoja de vida esté vinculado a una requisición');
                     return;
                 }
-                if(confirm('¿Está seguro de enviar la información a la Sociodemográfica?')) {
-                    document.getElementById('modalContratacion').classList.remove('hidden');
-                }
-            }
+                if (!confirm('¿Está seguro de enviar la información a la Sociodemográfica?')) return;
+                document.getElementById('modalContratacion').classList.remove('hidden');
+            });
             
             async function cargarOperaciones(regional) {
                 const selOp = document.getElementById('selectOperacion');
@@ -1008,13 +1125,130 @@ function generarHtmlAdmin(uuid, asp, idsAsp, nombresAsp, docsTec, docsFir, mapa,
                 regional: ${JSON.stringify(asp.regionalSugerida || '')},
                 operacion: ${JSON.stringify(asp.operacionSugerida || '')}
             };
+            document.getElementById('formFinal')?.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const form = e.target;
+                const payload = new URLSearchParams(new FormData(form));
+
+                const resp = await fetch('/finalizar-contratacion', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: payload.toString()
+                });
+
+                const data = await resp.json().catch(() => null);
+                if (!resp.ok || !data || !data.ok) {
+                    alert((data && (data.message + (data.details ? '\n' + data.details : ''))) || 'Error en contratación');
+                    return;
+                }
+
+                alert(data.message || 'Enviado');
+                window.location.href = data.redirect || '/admin/${uuid}';
+            });
         </script>
         <script>
-          const regionalSugerida = ${JSON.stringify(asp.regionalSugerida || '')};
-          const operacionSugerida = ${JSON.stringify(asp.operacionSugerida || '')};
+        // Intercepta TODOS los forms de upload-multiple (admin)
+        document.querySelectorAll('form[data-upload-form="1"]').forEach((form) => {
+            form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const btn = form.querySelector('button[type="submit"]');
+
+            // Validación: al menos 1 archivo
+            const fileInputs = form.querySelectorAll('input[type="file"]');
+            const alguno = Array.from(fileInputs).some(i => i.files && i.files.length > 0);
+            if (!alguno) {
+                alert('Selecciona al menos un archivo para subir.');
+                return;
+            }
+
+            // UI loading
+            const originalText = btn ? btn.innerText : null;
+            if (btn) {
+                btn.innerText = 'Cargando...';
+                btn.disabled = true;
+                btn.classList.add('opacity-50', 'pointer-events-none');
+            }
+
+             try {
+                const resp = await fetch('/upload-multiple', {
+                    method: 'POST',
+                    body: new FormData(form) // IMPORTANTE: no pongas Content-Type manual
+                });
+
+                const data = await resp.json().catch(() => null);
+
+                if (!resp.ok || !data || !data.ok) {
+                    alert((data && (data.message || data.details)) || 'Error al cargar documentos');
+                    return;
+                }
+
+                // OK => redirige
+                if (data.redirect) {
+                    window.location.href = data.redirect;
+                    return;
+                }
+
+                // fallback
+                alert(data.message || 'Documentos cargados');
+                window.location.reload();
+                } catch (err) {
+                alert('Error de red al cargar documentos');
+                } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50');
+                    btn.innerText = 'Cargar Documentos Seleccionados';
+                }
+                }
+            });
+        });
         </script>
+        <script>
+            async function submitUploadForm(form) {
+                const btn = form.querySelector('button[type="submit"]');
+                const fd = new FormData(form);
+
+                // Validación: al menos 1 archivo en este form
+                const fileInputs = form.querySelectorAll('input[type="file"]');
+                const alguno = Array.from(fileInputs).some(i => i.files && i.files.length > 0);
+                if (!alguno) { alert('Selecciona al menos un archivo en esta sección'); return; }
+
+                if (btn) { btn.disabled = true; btn.innerText = 'Subiendo...'; }
+
+                try {
+                const r = await fetch(form.action, { method: 'POST', body: fd });
+                const j = await r.json();
+
+                if (!r.ok || !j.ok) {
+                    alert(j?.message || 'Error subiendo archivos');
+                    if (btn) { btn.disabled = false; btn.innerText = 'CARGAR SECCIÓN'; }
+                    return;
+                }
+
+                if (j.redirect) window.location.href = j.redirect;
+                else window.location.reload();
+                } catch (e) {
+                alert('Error de red subiendo archivos');
+                if (btn) { btn.disabled = false; btn.innerText = 'CARGAR SECCIÓN'; }
+                }
+            }
+
+            document.getElementById('uploadFormTec')?.addEventListener('submit', (e) => {
+                e.preventDefault();
+                submitUploadForm(e.target);
+            });
+
+            document.getElementById('uploadFormFir')?.addEventListener('submit', (e) => {
+                e.preventDefault();
+                submitUploadForm(e.target);
+            });
+            </script>
     </body></html>`;
 }
+
+
 
 const PORT = Number(process.env.PORT || 3000);
 app.listen(PORT, () => console.log(`✅ Servidor corriendo en puerto ${PORT}`));
