@@ -166,11 +166,13 @@ app.get('/admin/:uuid', async (req, res) => {
 
 app.post('/aprobar-doc', async (req, res) => {
   const { id_aspirante, id_config_doc } = req.body;
+
   try {
     await db.query(
       'UPDATE Dynamic_hv_documentos SET estado = "Aprobado" WHERE id_aspirante = ? AND id_config_doc = ?',
       [id_aspirante, id_config_doc]
     );
+
     return jsonOk(res, { message: 'Documento aprobado', redirect: `/admin/${id_aspirante}` });
   } catch (error) {
     return jsonError(res, error, { message: 'Error al aprobar documento' });
