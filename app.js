@@ -317,113 +317,303 @@ app.post('/finalizar-contratacion', async (req, res) => {
         const nombreTrabajador = `${a.identificacion} ** ${[a.primer_nombre, a.segundo_nombre, a.primer_apellido, a.segundo_apellido]
             .filter(n => n && n.trim() !== "").join(" ").toUpperCase()}`.replace(/\s+/g, ' ');
 
-        // 5. TABLA: Maestro_Segmentación (UPSERT 100% según tablas conexion.txt)
-        const paramsSegmentacion = [
-        nombreTrabajador,
-        a.tipo_documento,
-        codTipoDoc,
-        a.identificacion,
-        a.primer_nombre?.toUpperCase() || null,
-        a.segundo_nombre?.toUpperCase() || null,
-        a.primer_apellido?.toUpperCase() || null,
-        a.segundo_apellido?.toUpperCase() || null,
-        a.tipo_documento === 'Cédula de Ciudadanía' ? 'NO' : 'SI',
-        a.departamento_expedicion || null,
-        a.ciudad_expedicion || null,
-        a.fecha_expedicion || null,
-        a.fecha_nacimiento || null,
-        a.rh || null,
-        operacion,
-        a.departamento || null,
-        a.ciudad || null,
-        a.direccion_barrio || null,
-        a.telefono || null,
-        a.correo_electronico || null,
-        a.estado_civil || null,
-        gradoEscolaridad,
-        nombreEmergencia,
-        telefonoEmergencia,
-        a.eps || null,
-        a.afp || null,
-        a.camisa_talla || null,      // Chaqueta
-        a.camisa_talla || null,      // Camiseta
-        a.talla_pantalon || null,    // Pantalon
-        a.zapatos_talla || null      // Botas
-        ];
+        // 5. TABLA: Maestro_Segmentación (UPSERT) - AJUSTADO A NUEVO ESQUEMA + MAPEO hv -> ms
 
-        await connection.query(`
+        const identificacionInt = Number(a.identificacion);
+        if (!Number.isFinite(identificacionInt)) {
+        throw new Error(`Identificación inválida: ${a.identificacion}`);
+        }
+
+        // Trabajador.ms = "identificacion ** NOMBRE COMPLETO" (mayúsculas, sin dobles espacios, omite vacíos)
+        const nombreCompletoUpper = [
+        a.primer_nombre,
+        a.segundo_nombre,
+        a.primer_apellido,
+        a.segundo_apellido
+        ]
+        .map(x => (x || '').toString().trim())
+        .filter(x => x.length > 0)
+        .join(' ')
+        .toUpperCase()
+        .replace(/\s+/g, ' ');
+
+        const trabajadorMs = `${a.identificacion} ** ${nombreCompletoUpper}`.replace(/\s+/g, ' ').trim();
+
+        const sqlSegmentacion = `
         INSERT INTO Maestro_Segmentación (
-            Trabajador, \`Tipo de Documento\`, \`Cod. Tipo Doc\`, Identificación,
-            \`Primer Nombre\`, \`Segundo Nombre\`, \`Primer Apellido\`, \`Segundo Apellido\`,
-            Extranjero, \`Género\`,
-            \`País Expedición\`, \`Departamento Expedición\`, \`Ciudad Expedición\`, \`Fecha Expedición\`,
-            \`País Nacimiento\`, \`Departamento Nacimiento\`, \`Ciudad Nacimiento\`,
-            \`Fecha Nacimiento\`, RH,
-            \`Observaciones Trabajador\`, \`Archivo Identificación\`, Doc_Contratacion,
-            Estado, \`Operación\`, \`Fecha de Actualización\`, Usuario,
-            \`Pais Residencia\`, \`Departamento Residencia\`, \`Ciudad de Residencia\`, \`Dirección de Residencia\`,
-            Celular, Email, Raza, \`Estado Civil\`, \`Grado Escolaridad\`,
-            \`Subsidio Familiar\`, \`Composición Familiar\`, \`N° Hijos menores a 18 años\`, \`N° Otras Personas a Cargo\`,
-            Estrato, \`Declarante de Renta\`,
-            \`Nombre Contacto de Emergencia\`, \`Telefono Contacto de Emergencia\`,
-            \`Observaciones Información Personal\`, \`Archivo Información Personal\`,
-            EPS, \`Fecha Afilición EPS\`, ARL, \`Tarifa ARL\`, Pensión,
-            Cesantías, \`Caja de Compensación\`, \`Observaciones Seguridad Social\`, \`Archivo Seguridad Social\`,
-            \`Forma de Pago\`, \`Tipo de Cuenta\`, Banco, \`N° Cuenta Bancaria\`,
-            \`Observaciones Banco\`, \`Archivo Banco\`,
-            Chaqueta, Camiseta, Numero, Pantalon, Botas, Fecha_Ultima_Entrega
+            \`Identificación\`,
+            \`Condicion\`,
+            \`Trabajador\`,
+            \`Tipo de Documento\`,
+            \`Cod. Tipo Doc\`,
+            \`Primer Nombre\`,
+            \`Segundo Nombre\`,
+            \`Primer Apellido\`,
+            \`Segundo Apellido\`,
+            \`Género\`,
+            \`RH\`,
+            \`País Expedición\`,
+            \`Departamento Expedición\`,
+            \`Ciudad Expedición\`,
+            \`Fecha Expedición\`,
+            \`País Nacimiento\`,
+            \`Departamento Nacimiento\`,
+            \`Ciudad Nacimiento\`,
+            \`Fecha Nacimiento\`,
+            \`Pais Residencia\`,
+            \`Departamento Residencia\`,
+            \`Ciudad de Residencia\`,
+            \`Dirección de Residencia\`,
+            \`Celular\`,
+            \`Email\`,
+            \`Estado Civil\`,
+            \`Grado Escolaridad\`,
+            \`EPS\`,
+            \`Radicacion EPS\`,
+            \`Tipo afiliado\`,
+            \`Pensión\`,
+            \`Radicacion AFP\`,
+            \`Cesantías\`,
+            \`Caja de Compensación\`,
+            \`Radicacion CCF\`,
+            \`ARL\`,
+            \`Riesgo ARL\`,
+            \`Nombre Contacto de Emergencia\`,
+            \`Telefono Contacto de Emergencia\`,
+            \`Banco\`,
+            \`N° Cuenta Bancaria\`,
+            \`Chaqueta\`,
+            \`Camiseta\`,
+            \`Numero\`,
+            \`Pantalon\`,
+            \`Botas\`,
+            \`Fecha_Ultima_Entrega\`,
+            \`Observaciones dotacion\`,
+            \`Estado\`,
+            \`Centro de costos\`,
+            \`Operación\`,
+            \`Usuario\`,
+            \`Fecha de Actualización\`
         )
         VALUES (
-            ?, ?, ?, ?,  ?, ?, ?, ?,
-            ?, NULL,
-            'Colombia', ?, ?, ?,
-            NULL, NULL, NULL, ?, ?,
-            NULL, NULL, NULL,
-            'Activo', ?, ${horaBogota}, 'Sistema',
-            'Colombia', ?, ?, ?,  ?, ?,
-            NULL, ?, ?,
-            NULL, NULL, NULL, NULL,
-            NULL, NULL,
-            ?, ?,
-            NULL, NULL,
-            ?, NULL, 'Bolivar', NULL, ?,
-            NULL, NULL, NULL, NULL,
-            'Transferencia', 'Ahorros', NULL, NULL,
-            NULL, NULL,
-            ?, ?, NULL, ?, ?, NULL
+            ?,  -- Identificación
+            ?,  -- Condicion
+            ?,  -- Trabajador
+            ?,  -- Tipo de Documento
+            ?,  -- Cod. Tipo Doc
+            ?,  -- Primer Nombre
+            ?,  -- Segundo Nombre
+            ?,  -- Primer Apellido
+            ?,  -- Segundo Apellido
+            ?,  -- Género
+            ?,  -- RH
+            ?,  -- País Expedición
+            ?,  -- Departamento Expedición
+            ?,  -- Ciudad Expedición
+            ?,  -- Fecha Expedición
+            ?,  -- País Nacimiento
+            ?,  -- Departamento Nacimiento
+            ?,  -- Ciudad Nacimiento
+            ?,  -- Fecha Nacimiento
+            ?,  -- Pais Residencia
+            ?,  -- Departamento Residencia
+            ?,  -- Ciudad de Residencia
+            ?,  -- Dirección de Residencia
+            ?,  -- Celular
+            ?,  -- Email
+            ?,  -- Estado Civil
+            ?,  -- Grado Escolaridad
+            ?,  -- EPS
+            ?,  -- Radicacion EPS
+            ?,  -- Tipo afiliado
+            ?,  -- Pensión
+            ?,  -- Radicacion AFP
+            ?,  -- Cesantías
+            ?,  -- Caja de Compensación
+            ?,  -- Radicacion CCF
+            ?,  -- ARL
+            ?,  -- Riesgo ARL
+            ?,  -- Nombre Contacto de Emergencia
+            ?,  -- Telefono Contacto de Emergencia
+            ?,  -- Banco
+            ?,  -- N° Cuenta Bancaria
+            ?,  -- Chaqueta
+            ?,  -- Camiseta
+            ?,  -- Numero
+            ?,  -- Pantalon
+            ?,  -- Botas
+            ?,  -- Fecha_Ultima_Entrega
+            ?,  -- Observaciones dotacion
+            ?,  -- Estado
+            ?,  -- Centro de costos
+            ?,  -- Operación
+            ?,  -- Usuario
+            ${horaBogota} -- Fecha de Actualización
         )
         ON DUPLICATE KEY UPDATE
-            Trabajador = VALUES(Trabajador),
+            \`Condicion\` = VALUES(\`Condicion\`),
+            \`Trabajador\` = VALUES(\`Trabajador\`),
             \`Tipo de Documento\` = VALUES(\`Tipo de Documento\`),
             \`Cod. Tipo Doc\` = VALUES(\`Cod. Tipo Doc\`),
             \`Primer Nombre\` = VALUES(\`Primer Nombre\`),
             \`Segundo Nombre\` = VALUES(\`Segundo Nombre\`),
             \`Primer Apellido\` = VALUES(\`Primer Apellido\`),
             \`Segundo Apellido\` = VALUES(\`Segundo Apellido\`),
-            Extranjero = VALUES(Extranjero),
+            \`RH\` = VALUES(\`RH\`),
+            \`País Expedición\` = VALUES(\`País Expedición\`),
             \`Departamento Expedición\` = VALUES(\`Departamento Expedición\`),
             \`Ciudad Expedición\` = VALUES(\`Ciudad Expedición\`),
             \`Fecha Expedición\` = VALUES(\`Fecha Expedición\`),
             \`Fecha Nacimiento\` = VALUES(\`Fecha Nacimiento\`),
-            RH = VALUES(RH),
-            \`Operación\` = VALUES(\`Operación\`),
-            \`Fecha de Actualización\` = ${horaBogota},
+            \`Pais Residencia\` = VALUES(\`Pais Residencia\`),
             \`Departamento Residencia\` = VALUES(\`Departamento Residencia\`),
             \`Ciudad de Residencia\` = VALUES(\`Ciudad de Residencia\`),
             \`Dirección de Residencia\` = VALUES(\`Dirección de Residencia\`),
-            Celular = VALUES(Celular),
-            Email = VALUES(Email),
+            \`Celular\` = VALUES(\`Celular\`),
+            \`Email\` = VALUES(\`Email\`),
             \`Estado Civil\` = VALUES(\`Estado Civil\`),
             \`Grado Escolaridad\` = VALUES(\`Grado Escolaridad\`),
-            \`Nombre Contacto de Emergencia\` = VALUES(\`Nombre Contacto de Emergencia\`),
-            \`Telefono Contacto de Emergencia\` = VALUES(\`Telefono Contacto de Emergencia\`),
-            EPS = VALUES(EPS),
-            Pensión = VALUES(Pensión),
-            Chaqueta = VALUES(Chaqueta),
-            Camiseta = VALUES(Camiseta),
-            Pantalon = VALUES(Pantalon),
-            Botas = VALUES(Botas)
-        `, paramsSegmentacion);
+            \`EPS\` = VALUES(\`EPS\`),
+            \`Pensión\` = VALUES(\`Pensión\`),
+            \`Chaqueta\` = VALUES(\`Chaqueta\`),
+            \`Camiseta\` = VALUES(\`Camiseta\`),
+            \`Pantalon\` = VALUES(\`Pantalon\`),
+            \`Botas\` = VALUES(\`Botas\`),
+            \`ARL\` = VALUES(\`ARL\`),
+            \`Centro de costos\` = VALUES(\`Centro de costos\`),
+            \`Operación\` = VALUES(\`Operación\`),
+            \`Usuario\` = VALUES(\`Usuario\`),
+            \`Estado\` = VALUES(\`Estado\`),
+            \`Fecha de Actualización\` = ${horaBogota}
+        `;
+
+        const paramsSegmentacionNuevo = [
+        // Identificación.ms
+        identificacionInt,
+
+        // Condicion.ms
+        null,
+
+        // Trabajador.ms
+        trabajadorMs,
+
+        // Tipo de Documento.ms
+        a.tipo_documento || null,
+
+        // Cod. Tipo Doc.ms (Config_Tipo_Documento)
+        codTipoDoc || null,
+
+        // Nombres.ms
+        a.primer_nombre?.toString().trim().toUpperCase() || null,
+        a.segundo_nombre?.toString().trim().toUpperCase() || null,
+        a.primer_apellido?.toString().trim().toUpperCase() || null,
+        a.segundo_apellido?.toString().trim().toUpperCase() || null,
+
+        // Género.ms
+        null,
+
+        // RH.ms
+        a.rh || null,
+
+        // País Expedición.ms
+        'Colombia',
+
+        // Departamento/Ciudad/Fecha Expedición.ms
+        a.departamento_expedicion || null,
+        a.ciudad_expedicion || null,
+        a.fecha_expedicion || null,
+
+        // País/Departamento/Ciudad Nacimiento.ms
+        null,
+        null,
+        null,
+
+        // Fecha Nacimiento.ms
+        a.fecha_nacimiento || null,
+
+        // Pais Residencia.ms
+        'Colombia',
+
+        // Departamento/Ciudad/Dirección Residencia.ms
+        a.departamento || null,
+        a.ciudad || null,
+        a.direccion_barrio || null,
+
+        // Celular / Email / Estado Civil.ms
+        a.telefono || null,
+        a.correo_electronico || null,
+        a.estado_civil || null,
+
+        // Grado Escolaridad.ms
+        gradoEscolaridad,
+
+        // EPS.ms
+        a.eps || null,
+
+        // Radicacion EPS.ms
+        null,
+
+        // Tipo afiliado.ms
+        null,
+
+        // Pensión.ms = afp.hv (según tu mapeo)
+        a.afp || null,
+
+        // Radicacion AFP.ms
+        null,
+
+        // Cesantías.ms
+        null,
+
+        // Caja de Compensación.ms
+        null,
+
+        // Radicacion CCF.ms
+        null,
+
+        // ARL.ms
+        'Bolivar',
+
+        // Riesgo ARL.ms
+        null,
+
+        // Nombre/Telefono Contacto Emergencia.ms
+        nombreEmergencia,
+        telefonoEmergencia,
+
+        // Banco / N° Cuenta Bancaria.ms
+        null,
+        null,
+
+        // Chaqueta/Camiseta/Pantalon/Botas.ms
+        a.camisa_talla || null,
+        a.camisa_talla || null,
+        a.talla_pantalon || null,
+        a.zapatos_talla || null,
+
+        // Numero.ms
+        null,
+
+        // Fecha_Ultima_Entrega.ms
+        null,
+
+        // Observaciones dotacion.ms
+        null,
+
+        // Estado.ms
+        'Activo',
+
+        // Centro de costos.ms (operación ingresada)
+        operacion,
+
+        // Operación.ms (operación ingresada)
+        operacion,
+
+        // Usuario.ms
+        'Sistema'
+        ];
+
+        await connection.query(sqlSegmentacion, paramsSegmentacionNuevo);
         
         // 6. TABLA: Maestro_Vinculación (Incluyendo Regional y Cod Siesa)
         await connection.query(`
