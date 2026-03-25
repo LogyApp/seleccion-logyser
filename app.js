@@ -4,6 +4,7 @@ const upload = require('./middlewares/upload');
 const documentoController = require('./controllers/documentoController');
 const db = require('./config/db');
 const { getBucketAspirantes, getBucketEmpleados } = require('./config/gcs');
+const fs = require('fs');
 
 const app = express();
 app.use(express.json());
@@ -47,7 +48,54 @@ app.get('/portal/:uuid', async (req, res) => {
             mapaDocs[c.id_config_doc] = { estado: c.estado, path: c.gcs_path };
         });
 
-        res.send(generarHtmlPortal(uuid, nombre, docsAspirante, mapaDocs, pdfUrl));
+        const docsHtml = docsAspirante.map(doc => {
+  const data = mapaDocs[doc.id];
+  const estaAprobado = data && data.estado === 'Aprobado';
+  const estaCargado = data && !estaAprobado;
+
+  if (estaAprobado) {
+    return `
+      <div class="p-3 border rounded-xl bg-green-50 border-green-200 flex justify-between">
+        <span class="font-bold text-sm">${doc.nombre}</span>
+        <span class="text-xs font-black text-green-700">APROBADO</span>
+      </div>
+    `;
+  }
+
+  if (estaCargado) {
+    return `
+      <div class="p-3 border rounded-xl flex justify-between">
+        <span class="font-bold text-sm">${doc.nombre}</span>
+        <div class="flex gap-3">
+          <a class="text-blue-600 font-bold text-xs" target="_blank"
+             href="https://storage.googleapis.com/hojas_vida_logyser/${data.path}">VER</a>
+          <button type="button" class="text-red-500 font-bold text-xs"
+            data-delete-doc="${doc.id}">ELIMINAR</button>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="p-3 border rounded-xl flex justify-between items-center">
+      <span class="font-bold text-sm">${doc.nombre}</span>
+      <input type="file" name="file_${doc.id}" accept=".pdf" class="text-xs" />
+    </div>
+  `;
+}).join('');
+
+const pdfLink = pdfUrl
+  ? `<a href="${pdfUrl}" target="_blank" rel="noopener noreferrer" class="font-bold">📄 Ver PDF de mi Hoja de Vida</a>`
+  : '';
+
+const html = renderTemplate(path.join(__dirname, 'views', 'portal.html'), {
+  UUID: uuid,
+  NOMBRE: nombre,
+  DOCS_HTML: docsHtml,
+  PDF_LINK: pdfLink,
+});
+
+res.send(html);
     } catch (error) {
         console.error(error);
         res.status(500).send("Error al cargar el portal");
@@ -144,19 +192,22 @@ app.get('/admin/:uuid', async (req, res) => {
         cargados.forEach(c => { mapaDocs[c.id_config_doc] = { estado: c.estado, path: c.gcs_path }; });
 
         // Enviamos el objeto con nombreCompleto e IdRequisicion
-        res.send(generarHtmlAdmin(
-        uuid,
-        {
-            nombreCompleto,
-            identificacion: a.identificacion,
-            IdRequisicion: a.IdRequisicion,
-            pdfUrl,
-            requisicionInfo,
-            regionalSugerida,
-            operacionSugerida
-        },
-        docsAspiranteIds, nombresAsp, docsTecnicos, docsFirmar, mapaDocs, estaContratado
-        ));
+        const pdfLinkAdmin = pdfUrl
+  ? `<p class="mt-2"><a class="text-blue-600 underline" href="${pdfUrl}" target="_blank" rel="noopener noreferrer">Ver PDF Hoja de Vida</a></p>`
+  : '';
+
+const html = renderTemplate(path.join(__dirname, 'views', 'admin.html'), {
+  UUID: uuid,
+  NOMBRE_COMPLETO: nombreCompleto,
+  IDENTIFICACION: a.identificacion,
+  REQUISICION_INFO: requisicionInfo || '',
+  PDF_LINK: pdfLinkAdmin,
+  IDREQ_JSON: JSON.stringify(a.IdRequisicion ?? null),
+  REGIONAL_SUGERIDA_JSON: JSON.stringify(regionalSugerida || ''),
+  OPERACION_SUGERIDA_JSON: JSON.stringify(operacionSugerida || ''),
+});
+
+res.send(html);
 
     } catch (error) {
         console.error(error);
@@ -707,544 +758,12 @@ app.post('/finalizar-contratacion', async (req, res) => {
     }
 });
 
-// --- 4. FUNCIÓN GENERAR HTML PORTAL ---
-function generarHtmlPortal(uuid, nombre, docs, mapaDocs, pdfUrl) {
-    return `
-    <!DOCTYPE html>
-    <html lang="es">
-    <head>
-        <meta charset="UTF-8"><title>Portal Aspirante | Logyser</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-        <style>
-            body { font-family: 'Inter', sans-serif; }
-            /* Estilos normales del portal aquí */
-        </style>
-    </head>
-    <body class="bg-slate-50 p-4 md:p-8">
-        <div class="max-w-3xl mx-auto">
-            <div class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
-                <img src="https://storage.googleapis.com/logyser-recibo-public/logo.png" class="h-24 w-auto object-contain">
-                <a href="https://curriculum-compact-594761951101.europe-west1.run.app" target="_blank" rel="noopener noreferrer">
-                📝 Revisar o Editar mi Hoja de Vida
-                </a>
-
-                ${pdfUrl ? `
-                <a href="${pdfUrl}" target="_blank" rel="noopener noreferrer">
-                    📄 Ver PDF de mi Hoja de Vida
-                </a>
-                ` : ``}
-            </div>
-
-            <div class="bg-white shadow-2xl rounded-3xl overflow-hidden border border-slate-100">
-                <form action="/upload-multiple" method="POST" enctype="multipart/form-data" id="mainForm">
-                    <input type="hidden" name="id_aspirante" value="${uuid}">
-                    <input type="hidden" name="origen" value="portal">
-                    <div class="p-8 md:p-12">
-                        <h2 class="text-3xl font-bold text-slate-800 mb-2 italic">¡Hola, ${nombre}!</h2>
-                        <p class="text-slate-500 mb-10 text-sm font-medium">Bienvenido al proceso de selección, a continuación, gestiona los documentos requeridos. Los documentos aprobados por Selección no podrán ser modificados.</p>
-                        <div class="space-y-3">
-                            ${docs.map(doc => {
-                                const data = mapaDocs[doc.id];
-                                const estaAprobado = data && data.estado === 'Aprobado';
-                                const estaCargado = data && !estaAprobado;
-                                
-                                return `
-                                <div class="flex flex-col md:flex-row md:items-center justify-between p-4 border ${estaAprobado ? 'border-green-200 bg-green-50' : 'border-slate-100 bg-white'} rounded-2xl shadow-sm">
-                                    <div class="flex items-center space-x-3 flex-1">
-                                        <div class="${estaAprobado ? 'text-green-500' : (estaCargado ? 'text-blue-500' : 'text-slate-300')}">
-                                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
-                                        </div>
-                                        <span class="text-sm font-semibold text-slate-700">${doc.nombre}</span>
-                                    </div>
-                                    <div class="flex items-center gap-2 mt-2 md:mt-0">
-                                        ${estaAprobado ? 
-                                            '<span class="text-[10px] font-black text-green-600 border border-green-200 px-3 py-1 rounded-lg bg-white uppercase">Aprobado</span>' : 
-                                            (estaCargado ? 
-                                                '<a href="https://storage.googleapis.com/hojas_vida_logyser/' + data.path + '" target="_blank" class="text-xs font-bold text-blue-600 px-3">Ver</a>' +
-                                                '<button type="button" onclick="confirmarEliminar(' + doc.id + ')" class="text-xs font-bold text-red-400 hover:text-red-600 italic">Eliminar</button>' : 
-                                                '<input type="file" name="file_' + doc.id + '" accept=".pdf" class="block w-full text-[11px] text-slate-500 file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:bg-blue-50 file:text-blue-700 font-bold hover:file:bg-blue-100 uppercase text-[10px]">'
-                                            )
-                                        }
-                                    </div>
-                                </div>`;
-                            }).join('')}
-                        </div>
-                        <div class="mt-12">
-                            <button type="submit" id="btnSubmit" class="w-full bg-slate-800 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-slate-900 transition-all uppercase tracking-wider">
-                                Cargar Documentos Seleccionados
-                            </button>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <script>
-            document.getElementById('mainForm')?.addEventListener('submit', async (e) => {
-                e.preventDefault();
-
-                const form = e.target;
-                const btn = document.getElementById('btnSubmit');
-
-                // Validación: al menos 1 archivo
-                const inputs = form.querySelectorAll('input[type="file"]');
-                const alguno = Array.from(inputs).some(i => i.files && i.files.length > 0);
-                if (!alguno) {
-                    alert('Selecciona al menos un archivo');
-                    return;
-                }
-
-                // UI loading
-                const originalText = btn ? btn.innerText : '';
-                if (btn) {
-                    btn.innerText = 'Enviando archivos...';
-                    btn.disabled = true;
-                    btn.classList.add('opacity-50', 'cursor-not-allowed');
-                }
-
-                try {
-                    const formData = new FormData(form);
-
-                    const resp = await fetch(form.action, {
-                    method: 'POST',
-                    body: formData,
-                    });
-
-                    const json = await resp.json().catch(() => null);
-
-                    if (!resp.ok || !json || !json.ok) {
-                    const msg = (json && (json.message || json.details)) ? `${json.message}\n${json.details || ''}` : 'Error subiendo documentos';
-                    alert(msg);
-                    return;
-                    }
-
-                    // éxito
-                    if (json.redirect) {
-                    window.location.href = json.redirect;
-                    } else {
-                    window.location.reload();
-                    }
-                } catch (err) {
-                    alert(`Error de red: ${err?.message || err}`);
-                } finally {
-                    if (btn) {
-                    btn.innerText = originalText;
-                    btn.disabled = false;
-                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
-                    }
-                }
-            });
-
-            async function confirmarEliminar(id) {
-            if (!confirm('¿Eliminar este documento?')) return;
-
-            const resp = await fetch('/delete-doc', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id_aspirante: '${uuid}', id_config_doc: id })
-            });
-
-            const data = await resp.json().catch(() => null);
-            if (!resp.ok || !data || !data.ok) {
-                alert((data && (data.message + (data.details ? '\n' + data.details : ''))) || 'Error');
-                return;
-            }
-
-            window.location.href = data.redirect || '/portal/${uuid}';
-            }
-        </script>
-    </body></html>`;
-}
-
-function generarHtmlAdmin(uuid, asp, idsAsp, nombresAsp, docsTec, docsFir, mapa, bloqueado) {
-    // Función interna para renderizar Técnicos y Firmas
-    const renderFilaSeleccion = (doc) => {
-        const data = mapa[doc.id]; // Aquí se define 'data'
-        return `
-        <div class="p-3 border-b border-slate-100 last:border-0">
-            <div class="flex justify-between items-center mb-2">
-                <span class="text-[11px] font-bold text-slate-700 uppercase">${doc.nombre}</span>
-                ${data ? `
-                    <div class="flex gap-2">
-                        <a href="https://storage.googleapis.com/hojas_vida_logyser/${data.path}" target="_blank" class="text-[10px] text-blue-600 font-bold">VER</a>
-                        ${!bloqueado ? '<button type="button" onclick="eliminar(' + doc.id + ')" class="text-[10px] text-red-400 font-bold italic">ELIMINAR</button>' : ''}
-                    </div>
-                ` : '<span class="text-[10px] text-slate-300 italic">Pendiente</span>'}
-            </div>
-            ${!data && !bloqueado ? `
-                <div class="relative border-2 border-dashed border-slate-200 rounded-lg p-2 hover:border-blue-400 transition-colors bg-slate-50">
-                    <input type="file" name="file_${doc.id}" accept=".pdf" 
-                           onchange="this.parentElement.querySelector('.file-name').innerText = this.files[0].name; this.parentElement.classList.add('bg-blue-50', 'border-blue-400')"
-                           class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
-                    <p class="text-[9px] text-center text-slate-400 file-name">Arrastra o haz clic para subir PDF</p>
-                </div>
-            ` : ''}
-        </div>`;
-    };
-
-    return `
-    <!DOCTYPE html>
-    <html lang="es">
-    <head>
-        <meta charset="UTF-8"><title>Selección | Logyser</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <style>
-            body { font-family: 'Inter', sans-serif; }
-            
-            /* El efecto gris que te gusta */
-            .interfaz-bloqueada { 
-                filter: grayscale(1);
-                opacity: 0.7;
-            }
-
-            /* BLOQUEO SELECTIVO: Desactiva botones e inputs */
-            .interfaz-bloqueada button, 
-            .interfaz-bloqueada input, 
-            .interfaz-bloqueada select { 
-                pointer-events: none !important; 
-                cursor: not-allowed;
-            }
-
-            /* RESCATE DEL BOTÓN VER: 
-            Forzamos que los enlaces <a> sí reciban clics 
-            y les devolvemos un poco de color al pasar el mouse */
-            .interfaz-bloqueada a { 
-                pointer-events: auto !important; 
-                cursor: pointer !important;
-                color: #2563eb !important; 
-                text-decoration: underline;
-            }
-            
-            .interfaz-bloqueada a:hover {
-                filter: brightness(1.2);
-            }
-        </style>
-    </head>
-    <body class="bg-slate-100 p-6">
-        <div class="max-w-7xl mx-auto ${bloqueado ? 'interfaz-bloqueada' : ''}">
-            <div class="flex justify-between items-center mb-8 bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
-                <img src="https://storage.googleapis.com/logyser-recibo-public/logo.png" class="h-16">
-                <div class="text-right">
-                    <h1 class="text-xl font-black text-slate-800 uppercase">${asp.nombreCompleto}</h1>
-                    <p class="text-xs text-slate-400 font-mono italic">C.C. ${asp.identificacion}</p>
-                    ${asp.requisicionInfo ? `<p class="text-xs text-slate-500 mt-1">${asp.requisicionInfo}</p>` : ``}
-                    ${asp.pdfUrl ? `<p class="text-xs mt-1"><a class="text-blue-600 underline" href="${asp.pdfUrl}" target="_blank" rel="noopener noreferrer">Ver PDF Hoja de Vida</a></p>` : ``}
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-                    <div class="p-4 bg-blue-600 text-white font-bold text-xs tracking-widest uppercase text-center">1. Validar Aspirante</div>
-                    <div class="p-4 space-y-3">
-                        ${idsAsp.map(id => {
-                            const d = mapa[id];
-                            const nombreDoc = nombresAsp[id];
-                            return `
-                            <div class="p-3 border rounded-2xl flex justify-between items-center ${d?.estado === 'Aprobado' ? 'bg-green-50 border-green-200' : ''}">
-                                <div class="flex items-center gap-2">
-                                    ${d && d.estado !== 'Aprobado' ? '<input type="checkbox" class="doc-check" value="' + id + '">' : ''}
-                                    <span class="text-[11px] font-bold text-slate-600">${nombreDoc}</span>
-                                </div>
-                                <div class="flex gap-2 items-center">
-                                    ${d ? '<a href="https://storage.googleapis.com/hojas_vida_logyser/' + d.path + '" target="_blank" class="text-[10px] font-bold text-blue-600">VER</a>' : ''}
-                                    ${d && d.estado !== 'Aprobado' && !bloqueado ? 
-                                    '<button type="button" onclick="eliminar(' + id + ')" class="text-[10px] text-red-400 italic font-bold">BORRAR</button>' 
-                                    : (d?.estado === 'Aprobado' ? '<span class="text-[10px] font-black text-green-600 uppercase">✓</span>' : '')
-                                    }
-                                </div>
-                            </div>`;
-                        }).join('')}
-                        <button onclick="aprobarMasivo()" class="w-full mt-4 bg-green-600 text-white py-3 rounded-xl text-[10px] font-black uppercase hover:bg-green-700 transition-all">Aprobar Seleccionados</button>
-                    </div>
-                </div>
-
-                <form id="uploadFormTec" action="/upload-multiple" method="POST" enctype="multipart/form-data"
-                    class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden"
-                    data-upload-form="1">
-                    <input type="hidden" name="id_aspirante" value="${uuid}">
-                    <input type="hidden" name="origen" value="admin">
-                    <div class="p-4 bg-orange-500 text-white font-bold text-xs tracking-widest uppercase text-center">2. Documentos Técnicos</div>
-                    <div class="p-2">${docsTec.map(renderFilaSeleccion).join('')}</div>
-                    <div class="p-4">
-                        <button type="submit" class="w-full bg-orange-500 text-white py-3 rounded-2xl font-bold text-xs transition-all">
-                            CARGAR SECCIÓN
-                        </button>
-                    </div>
-                </form>
-
-                <form id="uploadFormFir" action="/upload-multiple" method="POST" enctype="multipart/form-data"
-                    class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden"
-                    data-upload-form="1">
-                    <input type="hidden" name="id_aspirante" value="${uuid}">
-                    <input type="hidden" name="origen" value="admin">
-                    <div class="p-4 bg-purple-600 text-white font-bold text-xs tracking-widest uppercase text-center">3. Documentos para Firmas</div>
-                    <div class="p-2 h-[450px] overflow-y-auto">${docsFir.map(renderFilaSeleccion).join('')}</div>
-                    <div class="p-4">
-                        <button type="submit" class="w-full bg-purple-600 text-white py-3 rounded-2xl font-bold text-xs transition-all">
-                            CARGAR SECCIÓN
-                        </button>
-                    </div>
-                </form>
-            </div>
-
-            <div class="mt-12 text-center pb-20">
-                <button id="btnEnviarSocio" type="button" data-idreq='${JSON.stringify(asp.IdRequisicion ?? null)}'
-                    class="bg-slate-800 text-white px-16 py-6 rounded-3xl font-black text-xl shadow-2xl hover:scale-105 transition-all">
-                    ENVIAR A SOCIODEMOGRÁFICA
-                </button>
-            </div>
-        </div>
-
-        <div id="modalContratacion" class="hidden fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <div class="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
-                <h3 class="text-xl font-black text-slate-800 mb-6 italic uppercase tracking-tighter">Datos de Vinculación</h3>
-               <form id="formFinal" action="/finalizar-contratacion" method="POST">
-                    <input type="hidden" name="id_aspirante" value="${uuid}">
-                    <input type="hidden" name="origen" value="admin">
-
-                    <div class="mb-4">
-                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Regional</label>
-                        <select id="selectRegional" name="regional" required
-                        class="w-full border-2 border-slate-100 rounded-xl p-3 focus:border-blue-500 outline-none bg-white">
-                        <option value="">Seleccione Regional</option>
-                        </select>
-                    </div>
-
-                    <div class="mb-4">
-                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Operación</label>
-                        <select id="selectOperacion" name="operacion" required
-                        class="w-full border-2 border-slate-100 rounded-xl p-3 focus:border-blue-500 outline-none bg-white">
-                        <option value="">Seleccione Operación</option>
-                        </select>
-                    </div>
-
-                    <div class="mb-6">
-                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Fecha de Ingreso</label>
-                        <input id="fechaIngreso" type="date" name="fecha_ingreso" required
-                        class="w-full border-2 border-slate-100 rounded-xl p-3 focus:border-blue-500 outline-none">
-                    </div>
-
-                    <div class="flex space-x-3">
-                        <button id="btnCancelarModal" type="button" class="flex-1 text-slate-400 font-bold">CANCELAR</button>
-                        <button id="btnConfirmarVinculacion" type="submit"
-                        class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-black uppercase shadow-lg transition-all">
-                        CONFIRMAR
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-        
-        <script> 
-            const regionalSugerida = ${JSON.stringify(asp.regionalSugerida || '')};
-            const operacionSugerida = ${JSON.stringify(asp.operacionSugerida || '')};                        
-            async function eliminar(id) {
-                if (!confirm('¿Eliminar permanentemente este documento?')) return;
-
-                const resp = await fetch('/delete-doc-admin', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id_aspirante: '${uuid}', id_config_doc: id })
-                });
-
-                const data = await resp.json().catch(() => null);
-                if (!resp.ok || !data || !data.ok) {
-                    alert((data && (data.message + (data.details ? '\n' + data.details : ''))) || 'Error');
-                    return;
-                }
-
-                window.location.href = data.redirect || '/admin/${uuid}';
-            }
-            async function aprobarMasivo() {
-                const sel = Array.from(document.querySelectorAll('.doc-check:checked')).map(cb => cb.value);
-                if (sel.length === 0) return alert('Selecciona documentos');
-
-                const resp = await fetch('/aprobar-masivo', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                    id_aspirante: '${uuid}',
-                    ids_docs: sel
-                    })
-                });
-
-                const data = await resp.json().catch(() => null);
-                if (!resp.ok || !data || !data.ok) {
-                    alert((data && (data.message + (data.details ? '\n' + data.details : ''))) || 'Error');
-                    return;
-                }
-
-                alert(data.message || 'OK');
-                window.location.href = data.redirect || '/admin/${uuid}';
-            }
-            document.getElementById('btnEnviarSocio')?.addEventListener('click', async () => {
-                const idReq = JSON.parse(document.getElementById('btnEnviarSocio').dataset.idreq || 'null');
-                if (!idReq) {
-                    alert('Es necesario que la hoja de vida esté vinculado a una requisición');
-                    return;
-                }
-                if (!confirm('¿Está seguro de enviar la información a la Sociodemográfica?')) return;
-                document.getElementById('modalContratacion').classList.remove('hidden');
-            });
-            
-            async function cargarOperaciones(regional) {
-                const selOp = document.getElementById('selectOperacion');
-                selOp.innerHTML = '<option value="">Cargando...</option>';
-
-                if (!regional) {
-                selOp.innerHTML = '<option value="">Seleccione Operación</option>';
-                return;
-                }
-
-                const data = await fetch('/api/operaciones/' + encodeURIComponent(regional)).then(r => r.json());
-                selOp.innerHTML = '<option value="">Seleccione Operación</option>';
-                data.forEach(op => selOp.add(new Option(op, op)));
-
-                // Prefill operación si aplica
-                if (operacionSugerida) selOp.value = operacionSugerida;
-            }
-
-            // Cargar regionales (y aplicar prefill)
-            fetch('/api/regionales')
-                .then(r => r.json())
-                .then(async (data) => {
-                const sel = document.getElementById('selectRegional');
-
-                // reset (por si el HTML ya trae algo)
-                sel.innerHTML = '<option value="">Seleccione Regional</option>';
-                data.forEach(reg => sel.add(new Option(reg, reg)));
-
-                // Prefill regional si aplica
-                if (regionalSugerida) {
-                    sel.value = regionalSugerida;
-                    await cargarOperaciones(regionalSugerida);
-                }
-                });
-
-            // Si el analista cambia la regional, recargar operaciones (y NO forzar la sugerida)
-            document.getElementById('selectRegional').addEventListener('change', async (e) => {
-                // al cambiar regional manualmente, ya no aplicamos operacionSugerida
-                // (si quieres que sí intente seleccionarla si existe en esa regional, me dices)
-                await cargarOperaciones(e.target.value);
-            });
-
-            window.__PREFILL__ = {
-                regional: ${JSON.stringify(asp.regionalSugerida || '')},
-                operacion: ${JSON.stringify(asp.operacionSugerida || '')}
-            };
-            document.getElementById('formFinal')?.addEventListener('submit', async (e) => {
-                e.preventDefault();
-
-                const form = e.target;
-                const payload = new URLSearchParams(new FormData(form));
-
-                const resp = await fetch('/finalizar-contratacion', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: payload.toString()
-                });
-
-                const data = await resp.json().catch(() => null);
-                if (!resp.ok || !data || !data.ok) {
-                    alert((data && (data.message + (data.details ? '\n' + data.details : ''))) || 'Error en contratación');
-                    return;
-                }
-
-                alert(data.message || 'Enviado');
-                window.location.href = data.redirect || '/admin/${uuid}';
-            });
-            // Cerrar modal
-            document.getElementById('btnCancelarModal')?.addEventListener('click', () => {
-            document.getElementById('modalContratacion')?.classList.add('hidden');
-            });
-
-            // Cuando cambia regional => cargar operaciones
-            document.getElementById('selectRegional')?.addEventListener('change', async (e) => {
-            await cargarOperaciones(e.target.value);
-            });
-
-            // Submit del formFinal (evita submit normal y pone loading sin inline JS)
-            document.getElementById('formFinal')?.addEventListener('submit', async (e) => {
-            e.preventDefault();
-
-            const form = e.target;
-            const btn = document.getElementById('btnConfirmarVinculacion');
-
-            const originalText = btn ? btn.innerText : '';
-            if (btn) {
-                btn.disabled = true;
-                btn.innerText = 'PROCESANDO...';
-                btn.classList.add('opacity-50', 'pointer-events-none');
-            }
-
-            try {
-                const payload = new URLSearchParams(new FormData(form));
-
-                const resp = await fetch(form.action, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: payload.toString()
-                });
-
-                const data = await resp.json().catch(() => null);
-                if (!resp.ok || !data || !data.ok) {
-                alert((data && (data.message + (data.details ? '\n' + data.details : ''))) || 'Error en contratación');
-                return;
-                }
-
-                window.location.href = data.redirect || '/admin/${uuid}';
-            } catch (err) {
-                alert('Error de red: ' + (err?.message || err));
-            } finally {
-                if (btn) {
-                btn.disabled = false;
-                btn.innerText = originalText || 'CONFIRMAR';
-                btn.classList.remove('opacity-50', 'pointer-events-none');
-                }
-            }
-            });
-        </script>
-        
-        <script>
-            async function submitUploadForm(form) {
-                const btn = form.querySelector('button[type="submit"]');
-                const fd = new FormData(form);
-
-                const fileInputs = form.querySelectorAll('input[type="file"]');
-                const alguno = Array.from(fileInputs).some(i => i.files && i.files.length > 0);
-                if (!alguno) { alert('Selecciona al menos un archivo en esta sección'); return; }
-
-                if (btn) { btn.disabled = true; btn.innerText = 'Subiendo...'; }
-
-                try {
-                    const r = await fetch(form.action, { method: 'POST', body: fd });
-                    const j = await r.json().catch(() => null);
-
-                    if (!r.ok || !j || !j.ok) {
-                    alert((j && (j.message + (j.details ? '\n' + j.details : ''))) || 'Error subiendo archivos');
-                    return;
-                    }
-
-                    window.location.href = j.redirect || '/admin/${uuid}';
-                } catch (e) {
-                    alert('Error de red subiendo archivos');
-                } finally {
-                    if (btn) { btn.disabled = false; btn.innerText = 'CARGAR SECCIÓN'; }
-                }
-                }
-
-                document.getElementById('uploadFormTec')?.addEventListener('submit', (e) => {
-                e.preventDefault();
-                submitUploadForm(e.target);
-                });
-
-                document.getElementById('uploadFormFir')?.addEventListener('submit', (e) => {
-                e.preventDefault();
-                submitUploadForm(e.target);
-            });
-        </script>
-    </body></html>`;
+function renderTemplate(filePath, vars) {
+  let html = fs.readFileSync(filePath, 'utf8');
+  for (const [k, v] of Object.entries(vars)) {
+    html = html.split(`{{${k}}}`).join(String(v ?? ''));
+  }
+  return html;
 }
 
 
