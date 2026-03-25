@@ -1,59 +1,83 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8"/>
-  <title>Admin Selección</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta charset="utf-8" />
+  <title>Selección | Logyser</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-  <h1>{{NOMBRE_COMPLETO}}</h1>
-  <p>C.C. {{IDENTIFICACION}}</p>
-  <p>{{REQUISICION_INFO}}</p>
+<body class="bg-slate-100 p-6">
+  <div class="max-w-3xl mx-auto bg-white p-6 rounded-2xl shadow">
+    <h1 class="text-xl font-black">{{NOMBRE_COMPLETO}}</h1>
+    <p class="text-sm text-slate-500">C.C. {{IDENTIFICACION}}</p>
+    <p class="text-xs text-slate-400 mt-2">{{REQUISICION_INFO}}</p>
+    <div class="mt-2">{{PDF_LINK}}</div>
 
-  <button id="btnEnviarSocio" type="button" data-idreq='{{IDREQ_JSON}}'>ENVIAR A SOCIODEMOGRÁFICA</button>
+    <div class="mt-8">
+      <button id="btnEnviarSocio" type="button" data-idreq='{{IDREQ_JSON}}'
+        class="bg-slate-800 text-white px-6 py-3 rounded-xl font-bold">
+        ENVIAR A SOCIODEMOGRÁFICA
+      </button>
+    </div>
 
-  <div id="modalContratacion" style="display:none; border:1px solid #ccc; padding:12px; margin-top:12px;">
-    <form id="formFinal" action="/finalizar-contratacion" method="POST">
-      <input type="hidden" name="id_aspirante" value="{{UUID}}">
-      <input type="hidden" name="origen" value="admin">
+    <div id="modalContratacion" class="hidden mt-6 border rounded-xl p-4">
+      <h3 class="font-black mb-4">Datos de Vinculación</h3>
 
-      <label>Regional</label>
-      <select id="selectRegional" name="regional" required></select>
+      <form id="formFinal" action="/finalizar-contratacion" method="POST">
+        <input type="hidden" name="id_aspirante" value="{{UUID}}">
+        <input type="hidden" name="origen" value="admin">
 
-      <label>Operación</label>
-      <select id="selectOperacion" name="operacion" required></select>
+        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Regional</label>
+        <select id="selectRegional" name="regional" required class="w-full border rounded p-2 mb-4">
+          <option value="">Seleccione Regional</option>
+        </select>
 
-      <label>Fecha ingreso</label>
-      <input type="date" name="fecha_ingreso" required>
+        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Operación</label>
+        <select id="selectOperacion" name="operacion" required class="w-full border rounded p-2 mb-4">
+          <option value="">Seleccione Operación</option>
+        </select>
 
-      <button id="btnCancelarModal" type="button">CANCELAR</button>
-      <button id="btnConfirmarVinculacion" type="submit">CONFIRMAR</button>
-    </form>
+        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Fecha de Ingreso</label>
+        <input type="date" name="fecha_ingreso" required class="w-full border rounded p-2 mb-4">
+
+        <div class="flex gap-2">
+          <button id="btnCancelarModal" type="button" class="flex-1 border rounded p-2">CANCELAR</button>
+          <button id="btnConfirmarVinculacion" type="submit" class="flex-1 bg-blue-600 text-white rounded p-2">CONFIRMAR</button>
+        </div>
+      </form>
+    </div>
   </div>
 
 <script>
   const uuid = "{{UUID}}";
-  const regionalSugerida = "{{REGIONAL_SUGERIDA}}";
-  const operacionSugerida = "{{OPERACION_SUGERIDA}}";
+  const regionalSugerida = {{REGIONAL_SUGERIDA_JSON}};
+  const operacionSugerida = {{OPERACION_SUGERIDA_JSON}};
 
   const btnEnviar = document.getElementById('btnEnviarSocio');
-  btnEnviar.addEventListener('click', () => {
+  btnEnviar?.addEventListener('click', () => {
     const idReq = JSON.parse(btnEnviar.dataset.idreq || 'null');
     if (!idReq) return alert('Falta requisición');
     if (!confirm('¿Enviar a Sociodemográfica?')) return;
-    document.getElementById('modalContratacion').style.display = 'block';
+    document.getElementById('modalContratacion')?.classList.remove('hidden');
   });
 
-  document.getElementById('btnCancelarModal').addEventListener('click', () => {
-    document.getElementById('modalContratacion').style.display = 'none';
+  document.getElementById('btnCancelarModal')?.addEventListener('click', () => {
+    document.getElementById('modalContratacion')?.classList.add('hidden');
   });
 
   async function cargarOperaciones(regional) {
     const selOp = document.getElementById('selectOperacion');
     selOp.innerHTML = '<option value="">Cargando...</option>';
-    if (!regional) { selOp.innerHTML = '<option value="">Seleccione Operación</option>'; return; }
 
-    const data = await fetch('/api/operaciones/' + encodeURIComponent(regional)).then(r => r.json()).catch(() => []);
+    if (!regional) {
+      selOp.innerHTML = '<option value="">Seleccione Operación</option>';
+      return;
+    }
+
+    const data = await fetch('/api/operaciones/' + encodeURIComponent(regional))
+      .then(r => r.json())
+      .catch(() => []);
+
     selOp.innerHTML = '<option value="">Seleccione Operación</option>';
     data.forEach(op => selOp.add(new Option(op, op)));
     if (operacionSugerida) selOp.value = operacionSugerida;
@@ -65,23 +89,27 @@
       const sel = document.getElementById('selectRegional');
       sel.innerHTML = '<option value="">Seleccione Regional</option>';
       data.forEach(reg => sel.add(new Option(reg, reg)));
-      if (regionalSugerida) { sel.value = regionalSugerida; await cargarOperaciones(regionalSugerida); }
+
+      if (regionalSugerida) {
+        sel.value = regionalSugerida;
+        await cargarOperaciones(regionalSugerida);
+      }
     });
 
-  document.getElementById('selectRegional').addEventListener('change', async (e) => {
+  document.getElementById('selectRegional')?.addEventListener('change', async (e) => {
     await cargarOperaciones(e.target.value);
   });
 
-  document.getElementById('formFinal').addEventListener('submit', async (e) => {
+  document.getElementById('formFinal')?.addEventListener('submit', async (e) => {
     e.preventDefault();
 
+    const form = e.target;
     const btn = document.getElementById('btnConfirmarVinculacion');
-    const original = btn.innerText;
-    btn.disabled = true;
-    btn.innerText = 'PROCESANDO...';
+    const original = btn ? btn.innerText : '';
+
+    if (btn) { btn.disabled = true; btn.innerText = 'PROCESANDO...'; }
 
     try {
-      const form = e.target;
       const payload = new URLSearchParams(new FormData(form));
 
       const resp = await fetch(form.action, {
@@ -95,10 +123,10 @@
         alert((data && (data.message + (data.details ? '\\n' + data.details : ''))) || 'Error');
         return;
       }
+
       window.location.href = data.redirect || ('/admin/' + uuid);
     } finally {
-      btn.disabled = false;
-      btn.innerText = original;
+      if (btn) { btn.disabled = false; btn.innerText = original || 'CONFIRMAR'; }
     }
   });
 </script>

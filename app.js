@@ -49,40 +49,41 @@ app.get('/portal/:uuid', async (req, res) => {
         });
 
         const docsHtml = docsAspirante.map(doc => {
-  const data = mapaDocs[doc.id];
-  const estaAprobado = data && data.estado === 'Aprobado';
-  const estaCargado = data && !estaAprobado;
+        const data = mapaDocs[doc.id];
+        const estaAprobado = data && data.estado === 'Aprobado';
+        const estaCargado = data && !estaAprobado;
 
-  if (estaAprobado) {
-    return `
-      <div class="p-3 border rounded-xl bg-green-50 border-green-200 flex justify-between">
-        <span class="font-bold text-sm">${doc.nombre}</span>
-        <span class="text-xs font-black text-green-700">APROBADO</span>
-      </div>
-    `;
-  }
+        if (estaAprobado) {
+          return `
+            <div class="p-3 border rounded-xl bg-green-50 border-green-200 flex justify-between items-center">
+              <span class="font-bold text-sm text-slate-700">${doc.nombre}</span>
+              <span class="text-xs font-black text-green-700">APROBADO</span>
+            </div>
+          `;
+        }
 
-  if (estaCargado) {
-    return `
-      <div class="p-3 border rounded-xl flex justify-between">
-        <span class="font-bold text-sm">${doc.nombre}</span>
-        <div class="flex gap-3">
-          <a class="text-blue-600 font-bold text-xs" target="_blank"
-             href="https://storage.googleapis.com/hojas_vida_logyser/${data.path}">VER</a>
-          <button type="button" class="text-red-500 font-bold text-xs"
-            data-delete-doc="${doc.id}">ELIMINAR</button>
-        </div>
-      </div>
-    `;
-  }
+        if (estaCargado) {
+          return `
+            <div class="p-3 border rounded-xl flex justify-between items-center">
+              <span class="font-bold text-sm text-slate-700">${doc.nombre}</span>
+              <div class="flex gap-3">
+                <a class="text-blue-600 font-bold text-xs" target="_blank" rel="noopener noreferrer"
+                  href="https://storage.googleapis.com/hojas_vida_logyser/${data.path}">VER</a>
+                <button type="button" class="text-red-500 font-bold text-xs" data-delete-doc="${doc.id}">
+                  ELIMINAR
+                </button>
+              </div>
+            </div>
+          `;
+        }
 
-  return `
-    <div class="p-3 border rounded-xl flex justify-between items-center">
-      <span class="font-bold text-sm">${doc.nombre}</span>
-      <input type="file" name="file_${doc.id}" accept=".pdf" class="text-xs" />
-    </div>
-  `;
-}).join('');
+        return `
+          <div class="p-3 border rounded-xl flex justify-between items-center gap-3">
+            <span class="font-bold text-sm text-slate-700">${doc.nombre}</span>
+            <input type="file" name="file_${doc.id}" accept=".pdf" class="text-xs" />
+          </div>
+        `;
+      }).join('');
 
 const pdfLink = pdfUrl
   ? `<a href="${pdfUrl}" target="_blank" rel="noopener noreferrer" class="font-bold">📄 Ver PDF de mi Hoja de Vida</a>`
