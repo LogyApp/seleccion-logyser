@@ -739,7 +739,6 @@ function generarHtmlPortal(uuid, nombre, docs, mapaDocs, pdfUrl) {
             <div class="bg-white shadow-2xl rounded-3xl overflow-hidden border border-slate-100">
                 <form action="/upload-multiple" method="POST" enctype="multipart/form-data" id="mainForm">
                     <input type="hidden" name="id_aspirante" value="${uuid}">
-                    <input type="hidden" name="origen" value="admin">
                     <input type="hidden" name="origen" value="portal">
                     <div class="p-8 md:p-12">
                         <h2 class="text-3xl font-bold text-slate-800 mb-2 italic">¡Hola, ${nombre}!</h2>
@@ -763,7 +762,7 @@ function generarHtmlPortal(uuid, nombre, docs, mapaDocs, pdfUrl) {
                                             '<span class="text-[10px] font-black text-green-600 border border-green-200 px-3 py-1 rounded-lg bg-white uppercase">Aprobado</span>' : 
                                             (estaCargado ? 
                                                 '<a href="https://storage.googleapis.com/hojas_vida_logyser/' + data.path + '" target="_blank" class="text-xs font-bold text-blue-600 px-3">Ver</a>' +
-                                                '<button type="button" onclick="confirmarEliminar(' + doc.id + ', \'' + doc.nombre + '\')" class="text-xs font-bold text-red-400 hover:text-red-600 italic">Eliminar</button>' : 
+                                                '<button type="button" onclick="confirmarEliminar(' + doc.id + ')" class="text-xs font-bold text-red-400 hover:text-red-600 italic">Eliminar</button>' : 
                                                 '<input type="file" name="file_' + doc.id + '" accept=".pdf" class="block w-full text-[11px] text-slate-500 file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:bg-blue-50 file:text-blue-700 font-bold hover:file:bg-blue-100 uppercase text-[10px]">'
                                             )
                                         }
@@ -837,23 +836,22 @@ function generarHtmlPortal(uuid, nombre, docs, mapaDocs, pdfUrl) {
                 }
             });
 
-            async function confirmarEliminar(id, nombre) {
-                if (!confirm('¿Eliminar ' + nombre + '?')) return;
+            async function confirmarEliminar(id) {
+            if (!confirm('¿Eliminar este documento?')) return;
 
-                const resp = await fetch('/delete-doc', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id_aspirante: '${uuid}', id_config_doc: id })
-                });
+            const resp = await fetch('/delete-doc', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id_aspirante: '${uuid}', id_config_doc: id })
+            });
 
-                const data = await resp.json().catch(() => null);
-                if (!resp.ok || !data || !data.ok) {
-                    alert((data && (data.message + (data.details ? '\n' + data.details : ''))) || 'Error');
-                    return;
-                }
+            const data = await resp.json().catch(() => null);
+            if (!resp.ok || !data || !data.ok) {
+                alert((data && (data.message + (data.details ? '\n' + data.details : ''))) || 'Error');
+                return;
+            }
 
-                alert(data.message || 'OK');
-                window.location.href = data.redirect || '/portal/${uuid}';
+            window.location.href = data.redirect || '/portal/${uuid}';
             }
         </script>
     </body></html>`;
@@ -870,7 +868,7 @@ function generarHtmlAdmin(uuid, asp, idsAsp, nombresAsp, docsTec, docsFir, mapa,
                 ${data ? `
                     <div class="flex gap-2">
                         <a href="https://storage.googleapis.com/hojas_vida_logyser/${data.path}" target="_blank" class="text-[10px] text-blue-600 font-bold">VER</a>
-                        ${!bloqueado ? '<button type="button" onclick="eliminar(' + doc.id + ', \'' + doc.nombre + '\')" class="text-[10px] text-red-400 font-bold italic">ELIMINAR</button>' : ''}
+                        ${!bloqueado ? '<button type="button" onclick="eliminar(' + doc.id + ')" class="text-[10px] text-red-400 font-bold italic">ELIMINAR</button>' : ''}
                     </div>
                 ` : '<span class="text-[10px] text-slate-300 italic">Pendiente</span>'}
             </div>
@@ -951,8 +949,8 @@ function generarHtmlAdmin(uuid, asp, idsAsp, nombresAsp, docsTec, docsFir, mapa,
                                 <div class="flex gap-2 items-center">
                                     ${d ? '<a href="https://storage.googleapis.com/hojas_vida_logyser/' + d.path + '" target="_blank" class="text-[10px] font-bold text-blue-600">VER</a>' : ''}
                                     ${d && d.estado !== 'Aprobado' && !bloqueado ? 
-                                        '<button type="button" onclick="eliminar(' + id + ', \'' + nombreDoc + '\')" class="text-[10px] text-red-400 italic font-bold">BORRAR</button>' 
-                                        : (d?.estado === 'Aprobado' ? '<span class="text-[10px] font-black text-green-600 uppercase">✓</span>' : '')
+                                    '<button type="button" onclick="eliminar(' + id + ')" class="text-[10px] text-red-400 italic font-bold">BORRAR</button>' 
+                                    : (d?.estado === 'Aprobado' ? '<span class="text-[10px] font-black text-green-600 uppercase">✓</span>' : '')
                                     }
                                 </div>
                             </div>`;
@@ -966,7 +964,6 @@ function generarHtmlAdmin(uuid, asp, idsAsp, nombresAsp, docsTec, docsFir, mapa,
                     data-upload-form="1">
                     <input type="hidden" name="id_aspirante" value="${uuid}">
                     <input type="hidden" name="origen" value="admin">
-                    <input type="hidden" name="redirect_mode" value="json">
                     <div class="p-4 bg-orange-500 text-white font-bold text-xs tracking-widest uppercase text-center">2. Documentos Técnicos</div>
                     <div class="p-2">${docsTec.map(renderFilaSeleccion).join('')}</div>
                     <div class="p-4">
@@ -981,7 +978,6 @@ function generarHtmlAdmin(uuid, asp, idsAsp, nombresAsp, docsTec, docsFir, mapa,
                     data-upload-form="1">
                     <input type="hidden" name="id_aspirante" value="${uuid}">
                     <input type="hidden" name="origen" value="admin">
-                    <input type="hidden" name="redirect_mode" value="json">
                     <div class="p-4 bg-purple-600 text-white font-bold text-xs tracking-widest uppercase text-center">3. Documentos para Firmas</div>
                     <div class="p-2 h-[450px] overflow-y-auto">${docsFir.map(renderFilaSeleccion).join('')}</div>
                     <div class="p-4">
@@ -1003,34 +999,37 @@ function generarHtmlAdmin(uuid, asp, idsAsp, nombresAsp, docsTec, docsFir, mapa,
         <div id="modalContratacion" class="hidden fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div class="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
                 <h3 class="text-xl font-black text-slate-800 mb-6 italic uppercase tracking-tighter">Datos de Vinculación</h3>
-               <form id="formFinal" action="/finalizar-contratacion" method="POST" 
-                    onsubmit="const btn=this.querySelector('button[type=submit]'); btn.innerText='PROCESANDO...'; btn.classList.add('opacity-50', 'pointer-events-none');">
+               <form id="formFinal" action="/finalizar-contratacion" method="POST">
                     <input type="hidden" name="id_aspirante" value="${uuid}">
                     <input type="hidden" name="origen" value="admin">
-                    
+
                     <div class="mb-4">
                         <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Regional</label>
-                        <select id="selectRegional" name="regional" required onchange="cargarOperaciones(this.value)" class="w-full border-2 border-slate-100 rounded-xl p-3 focus:border-blue-500 outline-none bg-white">
-                            <option value="">Seleccione Regional</option>
+                        <select id="selectRegional" name="regional" required
+                        class="w-full border-2 border-slate-100 rounded-xl p-3 focus:border-blue-500 outline-none bg-white">
+                        <option value="">Seleccione Regional</option>
                         </select>
                     </div>
 
                     <div class="mb-4">
                         <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Operación</label>
-                        <select id="selectOperacion" name="operacion" required class="w-full border-2 border-slate-100 rounded-xl p-3 focus:border-blue-500 outline-none bg-white">
-                            <option value="">Seleccione Operación</option>
+                        <select id="selectOperacion" name="operacion" required
+                        class="w-full border-2 border-slate-100 rounded-xl p-3 focus:border-blue-500 outline-none bg-white">
+                        <option value="">Seleccione Operación</option>
                         </select>
                     </div>
 
                     <div class="mb-6">
                         <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Fecha de Ingreso</label>
-                        <input type="date" name="fecha_ingreso" required class="w-full border-2 border-slate-100 rounded-xl p-3 focus:border-blue-500 outline-none">
+                        <input id="fechaIngreso" type="date" name="fecha_ingreso" required
+                        class="w-full border-2 border-slate-100 rounded-xl p-3 focus:border-blue-500 outline-none">
                     </div>
 
                     <div class="flex space-x-3">
-                        <button type="button" onclick="document.getElementById('modalContratacion').classList.add('hidden')" class="flex-1 text-slate-400 font-bold">CANCELAR</button>
-                        <button type="submit" class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-black uppercase shadow-lg transition-all">
-                            CONFIRMAR
+                        <button id="btnCancelarModal" type="button" class="flex-1 text-slate-400 font-bold">CANCELAR</button>
+                        <button id="btnConfirmarVinculacion" type="submit"
+                        class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-black uppercase shadow-lg transition-all">
+                        CONFIRMAR
                         </button>
                     </div>
                 </form>
@@ -1040,8 +1039,8 @@ function generarHtmlAdmin(uuid, asp, idsAsp, nombresAsp, docsTec, docsFir, mapa,
         <script> 
             const regionalSugerida = ${JSON.stringify(asp.regionalSugerida || '')};
             const operacionSugerida = ${JSON.stringify(asp.operacionSugerida || '')};                        
-            async function eliminar(id, nombre) {
-                if (!confirm('¿Eliminar permanentemente ' + nombre + '?')) return;
+            async function eliminar(id) {
+                if (!confirm('¿Eliminar permanentemente este documento?')) return;
 
                 const resp = await fetch('/delete-doc-admin', {
                     method: 'POST',
@@ -1055,7 +1054,6 @@ function generarHtmlAdmin(uuid, asp, idsAsp, nombresAsp, docsTec, docsFir, mapa,
                     return;
                 }
 
-                alert(data.message || 'OK');
                 window.location.href = data.redirect || '/admin/${uuid}';
             }
             async function aprobarMasivo() {
@@ -1156,71 +1154,63 @@ function generarHtmlAdmin(uuid, asp, idsAsp, nombresAsp, docsTec, docsFir, mapa,
                 alert(data.message || 'Enviado');
                 window.location.href = data.redirect || '/admin/${uuid}';
             });
-        </script>
-        <script>
-        // Intercepta TODOS los forms de upload-multiple (admin)
-        document.querySelectorAll('form[data-upload-form="1"]').forEach((form) => {
-            form.addEventListener('submit', async (e) => {
+            // Cerrar modal
+            document.getElementById('btnCancelarModal')?.addEventListener('click', () => {
+            document.getElementById('modalContratacion')?.classList.add('hidden');
+            });
+
+            // Cuando cambia regional => cargar operaciones
+            document.getElementById('selectRegional')?.addEventListener('change', async (e) => {
+            await cargarOperaciones(e.target.value);
+            });
+
+            // Submit del formFinal (evita submit normal y pone loading sin inline JS)
+            document.getElementById('formFinal')?.addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            const btn = form.querySelector('button[type="submit"]');
+            const form = e.target;
+            const btn = document.getElementById('btnConfirmarVinculacion');
 
-            // Validación: al menos 1 archivo
-            const fileInputs = form.querySelectorAll('input[type="file"]');
-            const alguno = Array.from(fileInputs).some(i => i.files && i.files.length > 0);
-            if (!alguno) {
-                alert('Selecciona al menos un archivo para subir.');
-                return;
-            }
-
-            // UI loading
-            const originalText = btn ? btn.innerText : null;
+            const originalText = btn ? btn.innerText : '';
             if (btn) {
-                btn.innerText = 'Cargando...';
                 btn.disabled = true;
+                btn.innerText = 'PROCESANDO...';
                 btn.classList.add('opacity-50', 'pointer-events-none');
             }
 
-             try {
-                const resp = await fetch('/upload-multiple', {
-                    method: 'POST',
-                    body: new FormData(form) // IMPORTANTE: no pongas Content-Type manual
+            try {
+                const payload = new URLSearchParams(new FormData(form));
+
+                const resp = await fetch(form.action, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: payload.toString()
                 });
 
                 const data = await resp.json().catch(() => null);
-
                 if (!resp.ok || !data || !data.ok) {
-                    alert((data && (data.message || data.details)) || 'Error al cargar documentos');
-                    return;
+                alert((data && (data.message + (data.details ? '\n' + data.details : ''))) || 'Error en contratación');
+                return;
                 }
 
-                // OK => redirige
-                if (data.redirect) {
-                    window.location.href = data.redirect;
-                    return;
-                }
-
-                // fallback
-                alert(data.message || 'Documentos cargados');
-                window.location.reload();
-                } catch (err) {
-                alert('Error de red al cargar documentos');
-                } finally {
+                window.location.href = data.redirect || '/admin/${uuid}';
+            } catch (err) {
+                alert('Error de red: ' + (err?.message || err));
+            } finally {
                 if (btn) {
-                    btn.disabled = false;
-                    btn.classList.remove('opacity-50');
-                    btn.innerText = 'Cargar Documentos Seleccionados';
+                btn.disabled = false;
+                btn.innerText = originalText || 'CONFIRMAR';
+                btn.classList.remove('opacity-50', 'pointer-events-none');
                 }
-                }
+            }
             });
-        });
         </script>
+        
         <script>
             async function submitUploadForm(form) {
                 const btn = form.querySelector('button[type="submit"]');
                 const fd = new FormData(form);
 
-                // Validación: al menos 1 archivo en este form
                 const fileInputs = form.querySelectorAll('input[type="file"]');
                 const alguno = Array.from(fileInputs).some(i => i.files && i.files.length > 0);
                 if (!alguno) { alert('Selecciona al menos un archivo en esta sección'); return; }
@@ -1228,33 +1218,32 @@ function generarHtmlAdmin(uuid, asp, idsAsp, nombresAsp, docsTec, docsFir, mapa,
                 if (btn) { btn.disabled = true; btn.innerText = 'Subiendo...'; }
 
                 try {
-                const r = await fetch(form.action, { method: 'POST', body: fd });
-                const j = await r.json();
+                    const r = await fetch(form.action, { method: 'POST', body: fd });
+                    const j = await r.json().catch(() => null);
 
-                if (!r.ok || !j.ok) {
-                    alert(j?.message || 'Error subiendo archivos');
-                    if (btn) { btn.disabled = false; btn.innerText = 'CARGAR SECCIÓN'; }
+                    if (!r.ok || !j || !j.ok) {
+                    alert((j && (j.message + (j.details ? '\n' + j.details : ''))) || 'Error subiendo archivos');
                     return;
-                }
+                    }
 
-                if (j.redirect) window.location.href = j.redirect;
-                else window.location.reload();
+                    window.location.href = j.redirect || '/admin/${uuid}';
                 } catch (e) {
-                alert('Error de red subiendo archivos');
-                if (btn) { btn.disabled = false; btn.innerText = 'CARGAR SECCIÓN'; }
+                    alert('Error de red subiendo archivos');
+                } finally {
+                    if (btn) { btn.disabled = false; btn.innerText = 'CARGAR SECCIÓN'; }
                 }
-            }
+                }
 
-            document.getElementById('uploadFormTec')?.addEventListener('submit', (e) => {
+                document.getElementById('uploadFormTec')?.addEventListener('submit', (e) => {
+                e.preventDefault();
+                submitUploadForm(e.target);
+                });
+
+                document.getElementById('uploadFormFir')?.addEventListener('submit', (e) => {
                 e.preventDefault();
                 submitUploadForm(e.target);
             });
-
-            document.getElementById('uploadFormFir')?.addEventListener('submit', (e) => {
-                e.preventDefault();
-                submitUploadForm(e.target);
-            });
-            </script>
+        </script>
     </body></html>`;
 }
 
