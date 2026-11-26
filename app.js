@@ -627,7 +627,7 @@ function generarHtmlAdmin(uuid, asp, idsAsp, nombresAsp, docsTec, docsFir, mapa,
                     <h1 class="text-xl font-black text-slate-800 uppercase leading-tight">${asp.nombreCompleto}</h1>
                     <p class="text-xs text-slate-400 font-mono italic mb-2">C.C. ${asp.identificacion}</p>
                     ${asp.requisicionInfo ? `<p class="bg-slate-100 text-[10px] py-1 px-3 rounded-full text-slate-600 inline-block font-bold">${asp.requisicionInfo}</p>` : ``}
-                    ${asp.pdfUrl ? `<p class="text-xs mt-2"><a class="text-blue-600 font-bold underline" href="${asp.pdfUrl}" target="_blank">VER HOJA DE VIDA (PDF)</a></p>` : ``}
+                    ${asp.pdfUrl ? `<p class="text-sm mt-2"><a class="text-slate-600 hover:text-blue-600 transition-colors inline-block" href="${asp.pdfUrl}" target="_blank" title="Ver Hoja de Vida (PDF)">📄</a></p>` : ``}
                 </div>
             </div>
 
